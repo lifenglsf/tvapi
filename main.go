@@ -27,6 +27,11 @@ type channel struct {
 	Url   string `json:"url"`
 	Name  string `json:"name"`
 }
+type Resp struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
 
 func (h CusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h, ok := mux[r.URL.String()]; ok {
@@ -112,21 +117,30 @@ func graceStart() {
 	log.Println("SERVER UP AND RUNNING!")
 }
 func load(w http.ResponseWriter, r *http.Request) {
-	re, _ := json.Marshal(getChannel())
+	chann, e := getChannel()
+	res := Resp{Code: 0, Msg: "success", Data: make(map[string]interface{}, 0)}
+	statusCode := http.StatusOK
+	if e != nil {
+		res.Code = 500
+		statusCode = http.StatusInternalServerError
+		res.Msg = "获取列表失败"
+	}
+	res.Data = chann
+	re, _ := json.Marshal(res)
 	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	w.Write(re)
 	return
 }
 func index(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("tv api index"))
 }
-func getChannel() map[string]map[string][]channel {
+func getChannel() (map[string]map[string][]channel, error) {
 	result := make(map[string]map[string][]channel, 0)
 	r, e := db.Query("select types,name,url from tv where url!='' and status=1 ")
 	if e != nil {
 		log.Println("get channel list error ", e)
-		return result
+		return result, e
 	}
 	var list []channel
 
@@ -135,7 +149,7 @@ func getChannel() map[string]map[string][]channel {
 		e := r.Scan(&row.Types, &row.Name, &row.Url)
 		if e != nil {
 			log.Println("get channel list error", e)
-			return result
+			return result, e
 		}
 		list = append(list, row)
 	}
@@ -148,5 +162,5 @@ func getChannel() map[string]map[string][]channel {
 		}
 		result[v.Types][v.Name] = append(result[v.Types][v.Name], v)
 	}
-	return result
+	return result, nil
 }
