@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"time"
 )
 
@@ -31,6 +32,14 @@ type Resp struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
 	Data interface{} `json:"data"`
+}
+type first struct {
+	Name  string   `json:"name"`
+	Child []second `json:"child"`
+}
+type second struct {
+	Name  string    `json:"name"`
+	Child []channel `json:"child"`
 }
 
 func (h CusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -135,12 +144,14 @@ func load(w http.ResponseWriter, r *http.Request) {
 func index(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("tv api index"))
 }
-func getChannel() (map[string]map[string][]channel, error) {
+func getChannel() ([]first, error) {
 	result := make(map[string]map[string][]channel, 0)
 	r, e := db.Query("select types,name,url from tv where url!='' and status=1 ")
+	resp := make([]first, 0)
+
 	if e != nil {
 		log.Println("get channel list error ", e)
-		return result, e
+		return resp, e
 	}
 	var list []channel
 
@@ -149,10 +160,12 @@ func getChannel() (map[string]map[string][]channel, error) {
 		e := r.Scan(&row.Types, &row.Name, &row.Url)
 		if e != nil {
 			log.Println("get channel list error", e)
-			return result, e
+			return resp, e
 		}
 		list = append(list, row)
 	}
+	firstKeys := make(map[string]string, 0)
+	secondKeys := make(map[string]string, 0)
 	for _, v := range list {
 		if result[v.Types] == nil {
 			result[v.Types] = make(map[string][]channel, 0)
@@ -160,7 +173,35 @@ func getChannel() (map[string]map[string][]channel, error) {
 				result[v.Types][v.Name] = make([]channel, 0)
 			}
 		}
+		if firstKeys[v.Types] == "" {
+			firstKeys[v.Types] = v.Types
+		}
+		if secondKeys[v.Name] == "" {
+			secondKeys[v.Name] = v.Name
+		}
 		result[v.Types][v.Name] = append(result[v.Types][v.Name], v)
 	}
-	return result, nil
+	firstKey := make([]string, 0)
+	secondKey := make([]string, 0)
+	for _, f := range firstKeys {
+		firstKey = append(firstKey, f)
+	}
+	for _, s := range secondKeys {
+		secondKey = append(secondKey, s)
+	}
+	sort.Strings(firstKey)
+	sort.Strings(secondKey)
+	for _, ff := range firstKey {
+		fir := first{Name: ff}
+		for _, ss := range secondKey {
+			if result[ff][ss] != nil {
+				sec := second{Name: ss, Child: result[ff][ss]}
+				fir.Child = append(fir.Child, sec)
+			}
+
+		}
+		resp = append(resp, fir)
+
+	}
+	return resp, nil
 }
