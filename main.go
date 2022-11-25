@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"sort"
+	"syscall"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type CusHandler struct {
@@ -79,7 +81,45 @@ func main() {
 	}
 	done := make(chan bool, 1)
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	sign := []os.Signal{
+		syscall.SIGABRT,
+		syscall.SIGALRM,
+		syscall.SIGBUS,
+		syscall.SIGCHLD,
+		syscall.SIGCLD,
+		syscall.SIGCONT,
+		syscall.SIGFPE,
+		syscall.SIGHUP,
+		syscall.SIGILL,
+		syscall.SIGINT,
+		syscall.SIGIO,
+		syscall.SIGIOT,
+		syscall.SIGKILL,
+		syscall.SIGPIPE,
+		syscall.SIGPOLL,
+		syscall.SIGPROF,
+		syscall.SIGPWR,
+		syscall.SIGQUIT,
+		syscall.SIGSEGV,
+		syscall.SIGSTKFLT,
+		syscall.SIGSTOP,
+		syscall.SIGSYS,
+		syscall.SIGTERM,
+		syscall.SIGTRAP,
+		syscall.SIGTSTP,
+		syscall.SIGTTIN,
+		syscall.SIGTTOU,
+		syscall.SIGUNUSED,
+		syscall.SIGUSR1,
+		syscall.SIGUSR2,
+		syscall.SIGVTALRM,
+		syscall.SIGWINCH,
+		syscall.SIGXCPU,
+		syscall.SIGXFSZ,
+		os.Interrupt,
+		os.Kill,
+	}
+	signal.Notify(quit, sign...)
 	go graceStart()
 	go graceShutdown(s, quit, done)
 	mux = make(map[string]func(http.ResponseWriter, *http.Request))
@@ -92,7 +132,8 @@ func main() {
 	log.Println("Shutdown Over,Server exiting,Bye")
 }
 func graceShutdown(server *http.Server, quit <-chan os.Signal, done chan<- bool) {
-	<-quit
+	sig := <-quit
+	log.Println("signal", sig)
 	log.Println("Now We Well Shutdown Server ...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
