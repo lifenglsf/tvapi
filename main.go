@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -54,7 +53,7 @@ func (h CusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("file not found"))
 		return
 	}
-	io.WriteString(w, "URL: "+r.URL.String())
+
 }
 
 func init() {
@@ -124,6 +123,7 @@ func main() {
 	go graceShutdown(s, quit, done)
 	mux = make(map[string]func(http.ResponseWriter, *http.Request))
 	mux["/channel"] = load
+	mux["/ad"] = ad
 	mux["/"] = index
 	if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Panicf("Could not listen on %s:%d，err:%v", "localhost", port, err)
@@ -182,12 +182,89 @@ func load(w http.ResponseWriter, r *http.Request) {
 	w.Write(re)
 	return
 }
+func ad(w http.ResponseWriter, r *http.Request) {
+	ad, e := getAd()
+	res := Resp{Code: 0, Msg: "success", Data: make(map[string]interface{}, 0)}
+	statusCode := http.StatusOK
+	if e != nil {
+		res.Code = 500
+		statusCode = http.StatusInternalServerError
+		res.Msg = "获取列表失败"
+	}
+	res.Data = ad
+	re, _ := json.Marshal(res)
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(re)
+	return
+}
 func index(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("tv api index"))
 }
 func getChannel() ([]first, error) {
 	result := make(map[string]map[string][]channel, 0)
 	r, e := db.Query("select types,name,url from tv where url!='' and status=1 ")
+	resp := make([]first, 0)
+
+	if e != nil {
+		log.Println("get channel list error ", e)
+		return resp, e
+	}
+	var list []channel
+
+	for r.Next() {
+		var row channel
+		e := r.Scan(&row.Types, &row.Name, &row.Url)
+		if e != nil {
+			log.Println("get channel list error", e)
+			return resp, e
+		}
+		list = append(list, row)
+	}
+	firstKeys := make(map[string]string, 0)
+	secondKeys := make(map[string]string, 0)
+	for _, v := range list {
+		if result[v.Types] == nil {
+			result[v.Types] = make(map[string][]channel, 0)
+			if result[v.Types][v.Name] == nil {
+				result[v.Types][v.Name] = make([]channel, 0)
+			}
+		}
+		if firstKeys[v.Types] == "" {
+			firstKeys[v.Types] = v.Types
+		}
+		if secondKeys[v.Name] == "" {
+			secondKeys[v.Name] = v.Name
+		}
+		result[v.Types][v.Name] = append(result[v.Types][v.Name], v)
+	}
+	firstKey := make([]string, 0)
+	secondKey := make([]string, 0)
+	for _, f := range firstKeys {
+		firstKey = append(firstKey, f)
+	}
+	for _, s := range secondKeys {
+		secondKey = append(secondKey, s)
+	}
+	sort.Strings(firstKey)
+	sort.Strings(secondKey)
+	for _, ff := range firstKey {
+		fir := first{Name: ff}
+		for _, ss := range secondKey {
+			if result[ff][ss] != nil {
+				sec := second{Name: ss, Child: result[ff][ss]}
+				fir.Child = append(fir.Child, sec)
+			}
+
+		}
+		resp = append(resp, fir)
+
+	}
+	return resp, nil
+}
+func getAd() ([]first, error) {
+	result := make(map[string]map[string][]channel, 0)
+	r, e := db.Query("select types,name,url from tv where url!='' and status=2 and types='18+' ")
 	resp := make([]first, 0)
 
 	if e != nil {
